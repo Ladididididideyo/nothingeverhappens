@@ -21,7 +21,7 @@ app.get('/go', async (req, res) => {
     console.log(`🔍 Decoded target URL: ${targetUrl}`);
     if (!targetUrl.startsWith('http')) return res.status(400).send('Invalid target URL');
   } catch (err) {
-    return res.status(400).send('Malformed Base64 URL');
+    return res.status(400).send('Malformed Base64 URL:  ' + targetUrl);
   }
 
   try {
