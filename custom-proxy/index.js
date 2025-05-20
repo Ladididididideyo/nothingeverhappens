@@ -98,7 +98,7 @@ app.get('/go', async (req, res) => {
 (() => {
   const encode = (url) => btoa(new URL(url, document.baseURI).href);
 
-  const proxy = (url) => '/go?url=' + encode(url);
+  const proxy = (url) => ''${PROXY_BASE_URL}/go?url=' + encode(url);
 
   // Intercept anchor clicks
   document.addEventListener('click', e => {
