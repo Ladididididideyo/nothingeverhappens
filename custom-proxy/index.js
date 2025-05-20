@@ -80,6 +80,68 @@ app.get('/rendered', async (req, res) => {
         }
       }
     });
+    // Inject script to intercept links, navigation, and form submits
+const clientScript = document.createElement('script');
+clientScript.textContent = `
+  
+  document.querySelectorAll('a[href]').forEach(link => {
+    link.addEventListener('click', function(e) {
+      e.preventDefault();
+      const href = this.getAttribute('href');
+      if (href) {
+        const abs = new URL(href, document.baseURI).href;
+        window.parent.postMessage({ type: 'link-click', url: abs }, '*');
+      }
+    });
+  });
+
+  
+  const pushMsg = (url) => {
+    try {
+      const abs = new URL(url, document.baseURI).href;
+      window.parent.postMessage({ type: 'navigate', url: abs }, '*');
+    } catch (err) {
+      console.error("Invalid navigation URL:", url);
+    }
+  };
+
+  ['assign', 'replace'].forEach(method => {
+    const original = window.location[method];
+    Object.defineProperty(window.location, method, {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: function(url) {
+        pushMsg(url);
+      }
+    });
+  });
+
+  Object.defineProperty(window.location, 'href', {
+    configurable: true,
+    enumerable: true,
+    get: function() { return window.parent.location.href; },
+    set: function(url) { pushMsg(url); }
+  });
+
+ 
+  document.querySelectorAll('form').forEach(form => {
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      const action = form.getAttribute('action') || window.location.href;
+      const method = (form.getAttribute('method') || 'get').toLowerCase();
+      if (method !== 'get') {
+        alert("Only GET forms are supported via proxy.");
+        return;
+      }
+      const params = new URLSearchParams(new FormData(form)).toString();
+      const urlWithParams = action.includes('?') ? action + '&' + params : action + '?' + params;
+      const abs = new URL(urlWithParams, document.baseURI).href;
+      window.parent.postMessage({ type: 'navigate', url: abs }, '*');
+    });
+  });
+`;
+document.body.appendChild(clientScript);
 
     res.send(dom.serialize());
   } catch (err) {
