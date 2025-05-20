@@ -96,11 +96,19 @@ app.get('/go', async (req, res) => {
       const clientPatch = document.createElement('script');
       clientPatch.textContent = `
         (() => {
-          const postToParent = (type, url) => {
+          const encodeUrl = (url) => {
             try {
               const abs = new URL(url, document.baseURI).href;
-              window.parent.postMessage({ type, url: abs }, '*');
-            } catch (e) { console.error(e); }
+              return btoa(abs);
+            } catch {
+              return '';
+            }
+          };
+
+          const postToParent = (type, url) => {
+            const encodedUrl = encodeUrl(url);
+            if (!encodedUrl) return;
+            window.parent.postMessage({ type, url: encodedUrl }, '*');
           };
 
           document.querySelectorAll('a[href]').forEach(a => a.addEventListener('click', e => {
@@ -118,23 +126,11 @@ app.get('/go', async (req, res) => {
             postToParent('navigate', fullUrl);
           }));
 
-          const rewriteUrl = (url) => '${PROXY_BASE_URL}/go?url=' + encodeURIComponent(btoa(url));
-          const origFetch = window.fetch;
-          window.fetch = (url, opts) => origFetch(rewriteUrl(url), opts);
-
-          const origXHR = window.XMLHttpRequest;
-          window.XMLHttpRequest = function() {
-            const xhr = new origXHR();
-            const origOpen = xhr.open;
-            xhr.open = function(method, url, ...args) {
-              try { url = rewriteUrl(url); } catch {}
-              return origOpen.call(this, method, url, ...args);
-            };
-            return xhr;
-          };
+          // Override fetch and XHR here if you want (optional)
         })();
       `;
       document.body.append(clientPatch);
+
       return res.send(dom.serialize());
 
     } else {
