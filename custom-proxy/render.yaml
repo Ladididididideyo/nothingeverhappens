@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: proxy-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node index.js
+    region: oregon
+    envVars:
+      - key: NODE_ENV
+        value: production
