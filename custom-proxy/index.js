@@ -1,9 +1,13 @@
 const express = require('express');
-const { JSDOM } = require('jsdom');
+const {
+  JSDOM
+} = require('jsdom');
 const cors = require('cors');
 
 const fetch = (...args) =>
-  import('node-fetch').then(({ default: fetch }) => fetch(...args));
+  import('node-fetch').then(({
+    default: fetch
+  }) => fetch(...args));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,7 +35,9 @@ app.get('/go', async (req, res) => {
     if (contentType.includes('text/html')) {
       let html = await response.text();
       const dom = new JSDOM(html);
-      const { document } = dom.window;
+      const {
+        document
+      } = dom.window;
 
       document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(el => el.remove());
 
@@ -53,8 +59,8 @@ app.get('/go', async (req, res) => {
 
       ['img[src]', 'script[src]', 'link[rel=stylesheet][href]', 'video[src]', 'audio[src]', 'source[src]', 'form[action]']
       .forEach(sel => {
-        const tag = sel.match(/^[^\[]+/)[0];            // e.g. 'img'
-        const attr = sel.match(/\[([^\]]+)\]/)[1];      // e.g. 'src' or 'href' or 'action'
+        const tag = sel.match(/^[^\[]+/)[0]; // e.g. 'img'
+        const attr = sel.match(/\[([^\]]+)\]/)[1]; // e.g. 'src' or 'href' or 'action'
         rewriteAttr(tag, attr);
       });
 
@@ -64,16 +70,28 @@ app.get('/go', async (req, res) => {
         if (src && !src.startsWith('data:')) {
           try {
             const abs = new URL(src, targetUrl).href;
+            const encodedUrl = encodeURIComponent(Buffer.from(abs).toString('base64'));
             const script = document.createElement('script');
             script.textContent = `
-              fetch('${PROXY_BASE_URL}/go?url=${Buffer.from(abs).toString('base64')}')
-                .then(r => r.text())
-                .then(js => Function(js)())
-                .catch(e => console.error("Script load error:", e));`;
+        fetch('${PROXY_BASE_URL}/go?url=${encodedUrl}')
+          .then(r => r.text())
+          .then(js => {
+            try {
+              // Evaluate the fetched JS safely inside a function scope
+              (new Function(js))();
+            } catch (e) {
+              console.error("Script execution error:", e);
+            }
+          })
+          .catch(e => console.error("Script load error:", e));
+      `;
             el.replaceWith(script);
-          } catch {}
+          } catch (e) {
+            console.error("Error rewriting script src:", e);
+          }
         }
       });
+
 
       const clientPatch = document.createElement('script');
       clientPatch.textContent = `
