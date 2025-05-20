@@ -12,10 +12,16 @@ app.use(cors());
 
 // Proxy route
 app.get('/rendered', async (req, res) => {
-  const targetUrl = req.query.target;
+  const targetEncoded = req.query.target;
+  if (!targetEncoded) return res.status(400).send('Missing target parameter');
 
-  if (!targetUrl || !targetUrl.startsWith('http')) {
-    return res.status(400).send('Invalid URL');
+  let targetUrl;
+  try {
+    const decoded = Buffer.from(targetEncoded, 'base64').toString('utf-8');
+    if (!decoded.startsWith('http')) throw new Error('Invalid decoded URL');
+    targetUrl = decoded;
+  } catch (err) {
+    return res.status(400).send('Invalid base64 target');
   }
 
   try {
@@ -25,15 +31,15 @@ app.get('/rendered', async (req, res) => {
     const dom = new JSDOM(html);
     const { document } = dom.window;
 
-    // Remove <meta http-equiv="Content-Security-Policy">
+    // Remove CSP
     document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(el => el.remove());
 
-    // Inject <base> tag to resolve relative URLs
+    // Inject base tag
     const base = document.createElement('base');
     base.href = targetUrl;
     document.head.prepend(base);
 
-    // Rewrite all resource URLs
+    // Rewrite resources
     const rewriteAttr = (selector, attr) => {
       document.querySelectorAll(selector).forEach(el => {
         const val = el.getAttribute(attr);
@@ -50,16 +56,37 @@ app.get('/rendered', async (req, res) => {
 
     rewriteAttr('img', 'src');
     rewriteAttr('link[rel=stylesheet]', 'href');
-    rewriteAttr('script[src]', 'src');
     rewriteAttr('video', 'src');
     rewriteAttr('audio', 'src');
     rewriteAttr('source', 'src');
+    rewriteAttr('form', 'action');
+
+    // Replace script tags with inline fetchers
+    document.querySelectorAll('script[src]').forEach(el => {
+      const src = el.getAttribute('src');
+      if (src) {
+        try {
+          const absUrl = new URL(src, targetUrl).href;
+          const newScript = document.createElement('script');
+          newScript.textContent = `
+            fetch('/proxy?url=${encodeURIComponent(absUrl)}')
+              .then(res => res.text())
+              .then(js => Function(js)())
+              .catch(err => console.error("Script load error:", err));
+          `;
+          el.replaceWith(newScript);
+        } catch (e) {
+          console.warn('⚠️ Invalid script URL skipped:', src);
+        }
+      }
+    });
 
     res.send(dom.serialize());
   } catch (err) {
     res.status(500).send(`Error: ${err.message}`);
   }
 });
+
 
 // Basic proxy for assets
 app.get('/proxy', async (req, res) => {
