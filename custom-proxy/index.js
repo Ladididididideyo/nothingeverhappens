@@ -160,13 +160,20 @@ app.get('/proxy', async (req, res) => {
 
   try {
     const proxied = await fetch(target);
+
+    // Set content type header so browser knows how to handle it
     const contentType = proxied.headers.get('content-type');
-    res.set('Content-Type', contentType);
+    if (contentType) {
+      res.set('Content-Type', contentType);
+    }
+
+    // Pipe response body directly to client
     proxied.body.pipe(res);
   } catch (err) {
     res.status(500).send(`Proxy error: ${err.message}`);
   }
 });
+
 
 
 app.listen(PORT, () => {
