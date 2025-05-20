@@ -7,6 +7,7 @@ const fetch = (...args) =>
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const PROXY_BASE_URL = 'https://nothingeverhappens.onrender.com';
 
 app.use(cors());
 
@@ -46,7 +47,7 @@ app.get('/rendered', async (req, res) => {
         if (val) {
           try {
             const absUrl = new URL(val, targetUrl).href;
-            el.setAttribute(attr, `/proxy?url=${encodeURIComponent(absUrl)}`);
+            el.setAttribute(attr, `${PROXY_BASE_URL}/proxy?url=${encodeURIComponent(absUrl)}`);
           } catch (e) {
             console.warn('Invalid resource URL:', val);
           }
