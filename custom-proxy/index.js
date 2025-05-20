@@ -52,10 +52,12 @@ app.get('/go', async (req, res) => {
       };
 
       ['img[src]', 'script[src]', 'link[rel=stylesheet][href]', 'video[src]', 'audio[src]', 'source[src]', 'form[action]']
-        .forEach(sel => {
-          const [tag, attr] = sel.split(/\[|\]/)[0].split(/(?=\[)/);
-          rewriteAttr(tag, attr.slice(0, -1));
-        });
+      .forEach(sel => {
+        const tag = sel.match(/^[^\[]+/)[0];            // e.g. 'img'
+        const attr = sel.match(/\[([^\]]+)\]/)[1];      // e.g. 'src' or 'href' or 'action'
+        rewriteAttr(tag, attr);
+      });
+
 
       document.querySelectorAll('script[src]').forEach(el => {
         const src = el.getAttribute('src');
@@ -98,7 +100,7 @@ app.get('/go', async (req, res) => {
             postToParent('navigate', fullUrl);
           }));
 
-          const rewriteUrl = (url) => '/go?url=' + btoa(url);
+          const rewriteUrl = (url) => '${PROXY_BASE_URL}/go?url=' + encodeURIComponent(btoa(url));
           const origFetch = window.fetch;
           window.fetch = (url, opts) => origFetch(rewriteUrl(url), opts);
 
