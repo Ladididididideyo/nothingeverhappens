@@ -1,7 +1,8 @@
-// index.js
 const express = require('express');
-const fetch = require('node-fetch');
 const cors = require('cors');
+
+const fetch = (...args) =>
+  import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,13 +21,13 @@ app.get('/proxy', async (req, res) => {
       return res.status(response.status).send(`Failed to fetch: ${response.statusText}`);
     }
 
-    // Set the content-type header to match the original response
+    // Set the content-type from the original response
     const contentType = response.headers.get('content-type');
     if (contentType) {
       res.set('Content-Type', contentType);
     }
 
-    // Stream the response body to the client
+    // Pipe the response body directly to client
     response.body.pipe(res);
 
   } catch (err) {
@@ -34,6 +35,7 @@ app.get('/proxy', async (req, res) => {
     res.status(500).send('Proxy server error: ' + err.message);
   }
 });
+
 
 app.listen(PORT, () => {
   console.log(`🚀 Proxy server running on port ${PORT}`);
