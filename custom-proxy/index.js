@@ -95,41 +95,78 @@ app.get('/go', async (req, res) => {
 
       const clientPatch = document.createElement('script');
       clientPatch.textContent = `
-        (() => {
-          const encodeUrl = (url) => {
-            try {
-              const abs = new URL(url, document.baseURI).href;
-              return btoa(abs);
-            } catch {
-              return '';
-            }
-          };
+(() => {
+  const encode = (url) => btoa(new URL(url, document.baseURI).href);
 
-          const postToParent = (type, url) => {
-            const encodedUrl = encodeUrl(url);
-            if (!encodedUrl) return;
-            window.parent.postMessage({ type, url: encodedUrl }, '*');
-          };
+  const proxy = (url) => '/go?url=' + encode(url);
 
-          document.querySelectorAll('a[href]').forEach(a => a.addEventListener('click', e => {
-            e.preventDefault();
-            postToParent('link-click', a.getAttribute('href'));
-          }));
+  // Intercept anchor clicks
+  document.addEventListener('click', e => {
+    const a = e.target.closest('a[href]');
+    if (a && a.href) {
+      e.preventDefault();
+      const proxied = proxy(a.href);
+      window.location.href = proxied;
+    }
+  });
 
-          document.querySelectorAll('form').forEach(form => form.addEventListener('submit', e => {
-            e.preventDefault();
-            const action = form.getAttribute('action') || location.href;
-            const method = (form.getAttribute('method') || 'get').toLowerCase();
-            if (method !== 'get') return alert('Only GET forms supported');
-            const params = new URLSearchParams(new FormData(form)).toString();
-            const fullUrl = action.includes('?') ? action + '&' + params : action + '?' + params;
-            postToParent('navigate', fullUrl);
-          }));
+  // Intercept form GET submissions
+  document.addEventListener('submit', e => {
+    const form = e.target;
+    const method = (form.getAttribute('method') || 'get').toLowerCase();
+    if (method !== 'get') return;
+    e.preventDefault();
+    const action = form.getAttribute('action') || location.href;
+    const params = new URLSearchParams(new FormData(form)).toString();
+    const full = action.includes('?') ? action + '&' + params : action + '?' + params;
+    window.location.href = proxy(full);
+  });
 
-          // Override fetch and XHR here if you want (optional)
-        })();
-      `;
+  // Monkeypatch window.open
+  const origOpen = window.open;
+  window.open = function(url, ...args) {
+    try {
+      return origOpen.call(window, proxy(url), ...args);
+    } catch {
+      return origOpen.call(window, url, ...args);
+    }
+  };
+
+  // Monkeypatch assignment to location.href
+  const origAssign = window.location.assign;
+  window.location.assign = function(url) {
+    origAssign.call(window.location, proxy(url));
+  };
+
+  // Monkeypatch location.replace
+  const origReplace = window.location.replace;
+  window.location.replace = function(url) {
+    origReplace.call(window.location, proxy(url));
+  };
+
+  // Patch fetch (optional)
+  const origFetch = window.fetch;
+  window.fetch = function(url, ...args) {
+    return origFetch.call(window, proxy(url), ...args);
+  };
+
+  // Patch XHR (optional)
+  const origXHR = window.XMLHttpRequest;
+  window.XMLHttpRequest = function () {
+    const xhr = new origXHR();
+    const origOpen = xhr.open;
+    xhr.open = function (method, url, ...args) {
+      try {
+        url = proxy(url);
+      } catch {}
+      return origOpen.call(this, method, url, ...args);
+    };
+    return xhr;
+  };
+})();
+`;
       document.body.append(clientPatch);
+
 
       return res.send(dom.serialize());
 
