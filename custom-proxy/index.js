@@ -17,6 +17,7 @@ app.get('/rendered', async (req, res) => {
 
   try {
     targetUrl = decodeURIComponent(Buffer.from(base64, 'base64').toString('utf-8'));
+    console.log(`🚀 Proxy server decoded ${targetUrl}`);
     if (!targetUrl.startsWith('http')) {
       return res.status(400).send('Invalid decoded URL');
     }
