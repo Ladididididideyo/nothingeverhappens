@@ -23,7 +23,7 @@ app.get('/go', async (req, res) => {
   } catch (err) {
     return res.status(400).send('Malformed Base64 URL:  ' + targetUrl);
   }
-
+  console.log(`${targetUrl}`);
   try {
     const response = await fetch(targetUrl);
     const contentType = response.headers.get('content-type') || '';
