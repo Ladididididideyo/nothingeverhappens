@@ -13,7 +13,7 @@ app.use(cors());
 
 // Proxy route
 app.get('/go', async (req, res) => {
-  const encoded = req.query.url;
+  const encoded = req.query.target;
   let targetUrl;
 
   try {
