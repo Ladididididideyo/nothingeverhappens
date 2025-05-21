@@ -33,13 +33,22 @@ app.get('/go', async (req, res) => {
     const contentType = response.headers.get('content-type') || '';
 
     if (contentType.includes('text/html')) {
-      let html = await response.text();
-      const dom = new JSDOM(html);
-      const {
-        document
-      } = dom.window;
+  let html = await response.text();
 
-      document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(el => el.remove());
+  // Detect common CAPTCHA markers
+  const hasCaptcha = /captcha|cloudflare|hcaptcha|recaptcha/i.test(html);
+
+  if (hasCaptcha) {
+    console.log("⚠️ CAPTCHA page detected — sending raw HTML to browser");
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(html); // ← send it unmodified
+  }
+
+  // Continue with rewriting otherwise
+  const dom = new JSDOM(html);
+  const { document } = dom.window;
+
+  document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(el => el.remove());
 
       // Inline patch to ensure links stay within proxy
 document.querySelectorAll('a[href]').forEach(a => {
