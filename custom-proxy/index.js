@@ -41,6 +41,36 @@ app.get('/go', async (req, res) => {
 
       document.querySelectorAll('meta[http-equiv="Content-Security-Policy"]').forEach(el => el.remove());
 
+      // Inline patch to ensure links stay within proxy
+document.querySelectorAll('a[href]').forEach(a => {
+  const href = a.getAttribute('href');
+  if (href && !href.startsWith('javascript:')) {
+    try {
+      const abs = new URL(href, targetUrl).href;
+      const encoded = Buffer.from(abs).toString('base64');
+      a.setAttribute('href', '#'); // Prevent native navigation
+      a.setAttribute('onclick', `event.preventDefault(); window.location.href='${PROXY_BASE_URL}/go?url=${encoded}'`);
+    } catch (e) {
+      console.error('Bad link href:', href, e);
+    }
+  }
+});
+
+// Inline patch to handle GET forms
+document.querySelectorAll('form').forEach(form => {
+  const method = (form.getAttribute('method') || 'get').toLowerCase();
+  if (method === 'get') {
+    form.setAttribute('onsubmit', `
+      event.preventDefault();
+      const params = new URLSearchParams(new FormData(this)).toString();
+      const action = this.getAttribute('action') || location.href;
+      const full = action.includes('?') ? action + '&' + params : action + '?' + params;
+      window.location.href = '${PROXY_BASE_URL}/go?url=' + btoa(full);
+    `);
+  }
+});
+
+
       const base = document.createElement('base');
       base.href = targetUrl;
       document.head.prepend(base);
