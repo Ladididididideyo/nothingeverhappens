@@ -16,8 +16,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Simple memory cache with size limit for free tier
 const cache = new Map();
-const MAX_CACHE_SIZE = 50; // Limit cache entries to prevent memory issues
-const CACHE_TTL = 2 * 60 * 1000; // 2 minutes TTL for free tier
+const MAX_CACHE_SIZE = 50;
+const CACHE_TTL = 2 * 60 * 1000; // 2 minutes TTL
 
 // Utility functions
 function isValidUrl(string) {
@@ -105,18 +105,6 @@ app.get('/go', async (req, res) => {
       return res.status(400).json({ error: 'URL parameter is required' });
     }
     
-    // Check cache first
-    const cacheKey = `get:${encoded}`;
-    if (cache.has(cacheKey)) {
-      const cached = cache.get(cacheKey);
-      if (Date.now() - cached.timestamp < CACHE_TTL) {
-        console.log(`💾 Serving from cache: ${cached.targetUrl}`);
-        res.set(cached.headers);
-        return res.send(cached.body);
-      }
-      cache.delete(cacheKey);
-    }
-    
     targetUrl = decodeUrl(encoded);
     console.log(`🔍 Decoded target URL: ${targetUrl}`);
     
@@ -125,6 +113,20 @@ app.get('/go', async (req, res) => {
     }
   } catch (err) {
     return res.status(400).json({ error: 'Malformed URL', details: err.message });
+  }
+
+  // Define cacheKey here, after we have the encoded value
+  const cacheKey = `get:${encoded}`;
+  
+  // Check cache first
+  if (cache.has(cacheKey)) {
+    const cached = cache.get(cacheKey);
+    if (Date.now() - cached.timestamp < CACHE_TTL) {
+      console.log(`💾 Serving from cache: ${cached.targetUrl}`);
+      res.set(cached.headers);
+      return res.send(cached.body);
+    }
+    cache.delete(cacheKey);
   }
 
   console.log(`🌐 Fetching: ${targetUrl}`);
@@ -153,7 +155,7 @@ app.get('/go', async (req, res) => {
           contentType.startsWith('video/') || 
           contentType.startsWith('audio/') ||
           contentType.startsWith('font/')) {
-        res.set('Cache-Control', 'public, max-age=3600'); // 1 hour for free tier
+        res.set('Cache-Control', 'public, max-age=3600');
       }
       
       // Handle content length if available
