@@ -517,48 +517,6 @@ app.post('/go', async (req, res) => {
   }
 });
 
-// Handle Wikipedia's portal assets
-app.get('/portal/:path(*)', async (req, res) => {
-  try {
-    const assetPath = req.params[0]; // Gets everything after '/portal/'
-    const targetUrl = `https://${assetPath}`;
-
-    if (!isValidUrl(targetUrl)) {
-      return res.status(400).json({ error: 'Invalid asset URL' });
-    }
-
-    console.log(`🌐 Fetching asset: ${targetUrl}`);
-
-    const response = await fetchWithRetry(targetUrl, {}, 2, 10000);
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ 
-        error: `Asset fetch error: ${response.status} ${response.statusText}` 
-      });
-    }
-
-    // Set appropriate content type and caching headers
-    const contentType = response.headers.get('content-type') || 'application/octet-stream';
-    res.set('Content-Type', contentType);
-    
-    // Cache assets for longer (1 day)
-    if (contentType.startsWith('image/') || 
-        contentType.startsWith('font/') || 
-        contentType.startsWith('text/css')) {
-      res.set('Cache-Control', 'public, max-age=86400');
-    }
-
-    // Stream the asset directly to the client
-    response.body.pipe(res);
-  } catch (err) {
-    console.error('Asset fetch error:', err);
-    res.status(500).json({ 
-      error: 'Failed to fetch asset',
-      message: err.message 
-    });
-  }
-});
-
 // Simple stats endpoint
 app.get('/stats', (req, res) => {
   res.json({
