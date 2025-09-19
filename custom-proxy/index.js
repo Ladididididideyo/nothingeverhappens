@@ -85,6 +85,131 @@ async function fetchWithRetry(url, options = {}, retries = 2, timeout = 10000) {
   }
 }
 
+// Enhanced URL rewriting function with better resource handling
+function rewriteResourceUrls(document, targetUrl, proxyBaseUrl) {
+  // List of attributes that may contain URLs
+  const urlAttributes = [
+    'href', 'src', 'srcset', 'data-src', 'data-href', 'action', 
+    'poster', 'background', 'cite', 'formaction', 'icon', 'manifest',
+    'archive', 'code', 'codebase', 'usemap'
+  ];
+
+  // Elements that might contain URL attributes
+  const elementsWithUrls = document.querySelectorAll('*');
+  
+  elementsWithUrls.forEach(element => {
+    urlAttributes.forEach(attr => {
+      if (element.hasAttribute(attr)) {
+        const value = element.getAttribute(attr);
+        
+        // Skip data URLs, javascript URLs, etc.
+        if (value && 
+            !value.startsWith('data:') && 
+            !value.startsWith('javascript:') && 
+            !value.startsWith('mailto:') && 
+            !value.startsWith('blob:') &&
+            !value.startsWith('#')) {
+          
+          try {
+            let absoluteUrl;
+            if (value.startsWith('//')) {
+              absoluteUrl = new URL(targetUrl).protocol + value;
+            } else {
+              absoluteUrl = new URL(value, targetUrl).href;
+            }
+            
+            // Only proxy HTTP/HTTPS resources
+            if (absoluteUrl.startsWith('http')) {
+              const encodedUrl = encodeUrl(absoluteUrl);
+              element.setAttribute(attr, `${proxyBaseUrl}/go?url=${encodedUrl}`);
+            }
+          } catch (e) {
+            console.error('Error rewriting URL:', e);
+          }
+        }
+      }
+    });
+  });
+
+  // Handle srcset attribute specially (can contain multiple URLs)
+  document.querySelectorAll('[srcset]').forEach(element => {
+    const srcset = element.getAttribute('srcset');
+    if (srcset) {
+      const newSrcset = srcset.split(',').map(part => {
+        const [url, descriptor] = part.trim().split(/\s+/);
+        if (url && !url.startsWith('data:') && !url.startsWith('javascript:')) {
+          try {
+            let absoluteUrl;
+            if (url.startsWith('//')) {
+              absoluteUrl = new URL(targetUrl).protocol + url;
+            } else {
+              absoluteUrl = new URL(url, targetUrl).href;
+            }
+            
+            if (absoluteUrl.startsWith('http')) {
+              const encodedUrl = encodeUrl(absoluteUrl);
+              return `${proxyBaseUrl}/go?url=${encodedUrl} ${descriptor || ''}`.trim();
+            }
+          } catch (e) {
+            console.error('Error rewriting srcset URL:', e);
+          }
+        }
+        return part;
+      }).join(', ');
+      
+      element.setAttribute('srcset', newSrcset);
+    }
+  });
+
+  // Handle inline styles with URLs (background images, etc.)
+  document.querySelectorAll('*[style]').forEach(element => {
+    const style = element.getAttribute('style');
+    const newStyle = style.replace(/url\(['"]?(.*?)['"]?\)/gi, (match, url) => {
+      if (url && !url.startsWith('data:') && !url.startsWith('javascript:')) {
+        try {
+          let absoluteUrl;
+          if (url.startsWith('//')) {
+            absoluteUrl = new URL(targetUrl).protocol + url;
+          } else {
+            absoluteUrl = new URL(url, targetUrl).href;
+          }
+          
+          if (absoluteUrl.startsWith('http')) {
+            const encodedUrl = encodeUrl(absoluteUrl);
+            return `url('${proxyBaseUrl}/go?url=${encodedUrl}')`;
+          }
+        } catch (e) {
+          console.error('Error rewriting style URL:', e);
+        }
+      }
+      return match;
+    });
+    element.setAttribute('style', newStyle);
+  });
+
+  // Handle meta tags with URLs
+  document.querySelectorAll('meta[content]').forEach(meta => {
+    const content = meta.getAttribute('content');
+    if (content && (content.startsWith('http://') || content.startsWith('https://'))) {
+      try {
+        let absoluteUrl;
+        if (content.startsWith('//')) {
+          absoluteUrl = new URL(targetUrl).protocol + content;
+        } else {
+          absoluteUrl = new URL(content, targetUrl).href;
+        }
+        
+        if (absoluteUrl.startsWith('http')) {
+          const encodedUrl = encodeUrl(absoluteUrl);
+          meta.setAttribute('content', `${proxyBaseUrl}/go?url=${encodedUrl}`);
+        }
+      } catch (e) {
+        console.error('Error rewriting meta content URL:', e);
+      }
+    }
+  });
+}
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ 
@@ -181,69 +306,8 @@ app.get('/go', async (req, res) => {
     base.href = targetUrl;
     document.head.prepend(base);
 
-    // Enhanced URL rewriting function
-    const rewriteAttr = (selector, attr) => {
-      document.querySelectorAll(selector).forEach(el => {
-        const val = el.getAttribute(attr);
-        if (val && !val.startsWith('data:') && !val.startsWith('javascript:') && !val.startsWith('mailto:') && !val.startsWith('blob:')) {
-          try {
-            // Handle protocol-relative URLs (//example.com/path)
-            let absoluteUrl;
-            if (val.startsWith('//')) {
-              absoluteUrl = new URL(targetUrl).protocol + val;
-            } else {
-              absoluteUrl = new URL(val, targetUrl).href;
-            }
-            
-            // Only proxy HTTP/HTTPS resources
-            if (absoluteUrl.startsWith('http')) {
-              const encodedUrl = encodeUrl(absoluteUrl);
-              el.setAttribute(attr, `${PROXY_BASE_URL}/go?url=${encodedUrl}`);
-            }
-          } catch (e) {
-            console.error('Error rewriting URL:', e);
-          }
-        }
-      });
-    };
-
-    // Rewrite essential resource URLs only (for performance)
-    const essentialSelectors = [
-      'a[href]', 'img[src]', 'script[src]', 'link[href]', 
-      'iframe[src]', 'form[action]', 'source[src]'
-    ];
-    
-    essentialSelectors.forEach(selector => {
-      const tag = selector.match(/^[^\[]+/)[0];
-      const attr = selector.match(/\[([^\]]+)\]/)[1];
-      rewriteAttr(selector, attr);
-    });
-
-    // Handle inline styles with URLs (background images, etc.)
-    document.querySelectorAll('*[style]').forEach(el => {
-      const style = el.getAttribute('style');
-      const newStyle = style.replace(/url\(['"]?(.*?)['"]?\)/gi, (match, url) => {
-        if (url && !url.startsWith('data:') && !url.startsWith('javascript:')) {
-          try {
-            let absoluteUrl;
-            if (url.startsWith('//')) {
-              absoluteUrl = new URL(targetUrl).protocol + url;
-            } else {
-              absoluteUrl = new URL(url, targetUrl).href;
-            }
-            
-            if (absoluteUrl.startsWith('http')) {
-              const encodedUrl = encodeUrl(absoluteUrl);
-              return `url('${PROXY_BASE_URL}/go?url=${encodedUrl}')`;
-            }
-          } catch (e) {
-            console.error('Error rewriting style URL:', e);
-          }
-        }
-        return match;
-      });
-      el.setAttribute('style', newStyle);
-    });
+    // Enhanced URL rewriting for all resources
+    rewriteResourceUrls(document, targetUrl, PROXY_BASE_URL);
 
     // Enhanced script handling
     document.querySelectorAll('script[src]').forEach(el => {
@@ -330,7 +394,7 @@ app.get('/go', async (req, res) => {
       window.location.assign(url);
     },
     configurable: true
-  });
+  };
 
   const origAssign = window.location.assign;
   window.location.assign = function(url) {
@@ -418,6 +482,9 @@ app.post('/go', async (req, res) => {
     const base = document.createElement('base');
     base.href = targetUrl;
     document.head.prepend(base);
+
+    // Enhanced URL rewriting for all resources
+    rewriteResourceUrls(document, targetUrl, PROXY_BASE_URL);
 
     // Add the client patch script
     const clientPatch = document.createElement('script');
