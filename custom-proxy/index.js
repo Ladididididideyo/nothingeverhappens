@@ -394,7 +394,7 @@ app.get('/go', async (req, res) => {
       window.location.assign(url);
     },
     configurable: true
-  };
+  });
 
   const origAssign = window.location.assign;
   window.location.assign = function(url) {
