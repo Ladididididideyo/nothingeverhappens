@@ -518,7 +518,7 @@ app.post('/go', async (req, res) => {
 });
 
 // Handle Wikipedia's portal assets
-app.get('/portal/*', async (req, res) => {
+app.get('/portal/:path(*)', async (req, res) => {
   try {
     const assetPath = req.params[0]; // Gets everything after '/portal/'
     const targetUrl = `https://${assetPath}`;
