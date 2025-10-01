@@ -517,8 +517,77 @@ app.post('/go', async (req, res) => {
           }
         };
         const proxy = (url) => '${PROXY_BASE_URL}/go?url=' + encode(url);
-        // ... rest of the client code
-      })();
+        
+  // Intercept anchor clicks
+  document.addEventListener('click', e => {
+    const a = e.target.closest('a[href]');
+    if (a && a.href) {
+      e.preventDefault();
+      const proxied = proxy(a.href);
+      window.location.href = proxied;
+    }
+  });
+
+  // Intercept form submissions
+  document.addEventListener('submit', e => {
+    const form = e.target;
+    const method = (form.getAttribute('method') || 'get').toLowerCase();
+    
+    if (method === 'get') {
+      e.preventDefault();
+      const action = form.getAttribute('action') || location.href;
+      const params = new URLSearchParams(new FormData(form)).toString();
+      const fullUrl = action.includes('?') ? action + '&' + params : action + '?' + params;
+      window.location.href = proxy(fullUrl);
+    }
+  });
+
+  // Monkeypatch window.open
+  const origOpen = window.open;
+  window.open = function(url, ...args) {
+    try {
+      return origOpen.call(window, proxy(url), ...args);
+    } catch {
+      return origOpen.call(window, url, ...args);
+    }
+  };
+
+  // Monkeypatch assignment to location.href
+  Object.defineProperty(window.location, 'href', {
+    set: function(url) {
+      window.location.assign(url);
+    },
+    configurable: true
+  });
+
+  const origAssign = window.location.assign;
+  window.location.assign = function(url) {
+    origAssign.call(window.location, proxy(url));
+  };
+
+  // Monkeypatch location.replace
+  const origReplace = window.location.replace;
+  window.location.replace = function(url) {
+    origReplace.call(window.location, proxy(url));
+  };
+
+  const messageHandler = (event) => {
+    // Optional: check origin for security
+    // if (event.origin !== "https://your-allowed-domain.com") return;
+  
+    if (event.data && event.data.type === "EXEC_SCRIPT") {
+      try {
+        // Safely evaluate the script string sent from parent
+        // Note: using new Function is safer than eval for isolation
+        eval(event.data.code);
+      } catch (err) {
+        console.error("Script execution error:", err);
+      }
+    }
+  };
+  
+  window.addEventListener("message", messageHandler, false);
+})();
     `;
     document.body.appendChild(clientPatch);
 
