@@ -415,7 +415,7 @@ app.get('/go', async (req, res) => {
       try {
         // Safely evaluate the script string sent from parent
         // Note: using new Function is safer than eval for isolation
-        new Function(event.data.code)();
+        eval(event.data.code);
       } catch (err) {
         console.error("Script execution error:", err);
       }
