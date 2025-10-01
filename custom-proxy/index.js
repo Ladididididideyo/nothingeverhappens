@@ -406,6 +406,23 @@ app.get('/go', async (req, res) => {
   window.location.replace = function(url) {
     origReplace.call(window.location, proxy(url));
   };
+
+  const messageHandler = (event) => {
+    // Optional: check origin for security
+    // if (event.origin !== "https://your-allowed-domain.com") return;
+  
+    if (event.data && event.data.type === "EXEC_SCRIPT") {
+      try {
+        // Safely evaluate the script string sent from parent
+        // Note: using new Function is safer than eval for isolation
+        new Function(event.data.code)();
+      } catch (err) {
+        console.error("Script execution error:", err);
+      }
+    }
+  };
+  
+  window.addEventListener("message", messageHandler, false);
 })();
     `;
     document.body.appendChild(clientPatch);
