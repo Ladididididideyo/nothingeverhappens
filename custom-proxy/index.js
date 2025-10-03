@@ -388,14 +388,6 @@ app.get('/go', async (req, res) => {
     }
   };
 
-  
-  Object.defineProperty(window.location, 'href', {
-    set: function(url) {
-      window.location.assign(url);
-    },
-    configurable: true
-  });
-
   const origAssign = window.location.assign;
   window.location.assign = function(url) {
     origAssign.call(window.location, proxy(url));
@@ -545,13 +537,6 @@ app.post('/go', async (req, res) => {
       return origOpen.call(window, url, ...args);
     }
   };
-
-  Object.defineProperty(window.location, 'href', {
-    set: function(url) {
-      window.location.assign(url);
-    },
-    configurable: true
-  });
 
   const origAssign = window.location.assign;
   window.location.assign = function(url) {
