@@ -354,7 +354,7 @@ app.get('/go', async (req, res) => {
 
   const proxy = (url) => '${PROXY_BASE_URL}/go?url=' + encode(url);
 
-  // Intercept anchor clicks
+  
   document.addEventListener('click', e => {
     const a = e.target.closest('a[href]');
     if (a && a.href) {
@@ -364,7 +364,7 @@ app.get('/go', async (req, res) => {
     }
   });
 
-  // Intercept form submissions
+  
   document.addEventListener('submit', e => {
     const form = e.target;
     const method = (form.getAttribute('method') || 'get').toLowerCase();
@@ -378,7 +378,7 @@ app.get('/go', async (req, res) => {
     }
   });
 
-  // Monkeypatch window.open
+  
   const origOpen = window.open;
   window.open = function(url, ...args) {
     try {
@@ -388,7 +388,7 @@ app.get('/go', async (req, res) => {
     }
   };
 
-  // Monkeypatch assignment to location.href
+  
   Object.defineProperty(window.location, 'href', {
     set: function(url) {
       window.location.assign(url);
@@ -401,20 +401,18 @@ app.get('/go', async (req, res) => {
     origAssign.call(window.location, proxy(url));
   };
 
-  // Monkeypatch location.replace
+  
   const origReplace = window.location.replace;
   window.location.replace = function(url) {
     origReplace.call(window.location, proxy(url));
   };
 
   const messageHandler = (event) => {
-    // Optional: check origin for security
-    // if (event.origin !== "https://your-allowed-domain.com") return;
+    
   
     if (event.data && event.data.type === "EXEC_SCRIPT") {
       try {
-        // Safely evaluate the script string sent from parent
-        // Note: using new Function is safer than eval for isolation
+        
         eval(event.data.code);
       } catch (err) {
         console.error("Script execution error:", err);
@@ -506,7 +504,6 @@ app.post('/go', async (req, res) => {
     // Add the client patch script
     const clientPatch = document.createElement('script');
     clientPatch.textContent = `
-      // Client patch code
       (function() {
         const encode = (url) => {
           try {
@@ -517,8 +514,7 @@ app.post('/go', async (req, res) => {
           }
         };
         const proxy = (url) => '${PROXY_BASE_URL}/go?url=' + encode(url);
-        
-  // Intercept anchor clicks
+  
   document.addEventListener('click', e => {
     const a = e.target.closest('a[href]');
     if (a && a.href) {
@@ -527,8 +523,7 @@ app.post('/go', async (req, res) => {
       window.location.href = proxied;
     }
   });
-
-  // Intercept form submissions
+  
   document.addEventListener('submit', e => {
     const form = e.target;
     const method = (form.getAttribute('method') || 'get').toLowerCase();
@@ -541,8 +536,7 @@ app.post('/go', async (req, res) => {
       window.location.href = proxy(fullUrl);
     }
   });
-
-  // Monkeypatch window.open
+  
   const origOpen = window.open;
   window.open = function(url, ...args) {
     try {
@@ -552,7 +546,6 @@ app.post('/go', async (req, res) => {
     }
   };
 
-  // Monkeypatch assignment to location.href
   Object.defineProperty(window.location, 'href', {
     set: function(url) {
       window.location.assign(url);
@@ -565,20 +558,14 @@ app.post('/go', async (req, res) => {
     origAssign.call(window.location, proxy(url));
   };
 
-  // Monkeypatch location.replace
   const origReplace = window.location.replace;
   window.location.replace = function(url) {
     origReplace.call(window.location, proxy(url));
   };
 
   const messageHandler = (event) => {
-    // Optional: check origin for security
-    // if (event.origin !== "https://your-allowed-domain.com") return;
-  
     if (event.data && event.data.type === "EXEC_SCRIPT") {
       try {
-        // Safely evaluate the script string sent from parent
-        // Note: using new Function is safer than eval for isolation
         eval(event.data.code);
       } catch (err) {
         console.error("Script execution error:", err);
