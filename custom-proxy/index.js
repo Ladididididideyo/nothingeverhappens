@@ -580,86 +580,38 @@ app.post('/go', async (req, res) => {
 
 // YouTube Info Endpoint
 app.get('/youtube/info', async (req, res) => {
-  const encoded = req.query.url;
-  let videoUrl;
-
   try {
-    if (!encoded) {
-      return res.status(400).json({ error: 'YouTube URL is required' });
-    }
+    const videoUrl = req.query.url;
+    if (!videoUrl) return res.status(400).json({ error: 'No URL' });
     
-    videoUrl = decodeUrl(encoded);
-    console.log(`📹 YouTube info request: ${videoUrl}`);
-    
-    if (!ytdl.validateURL(videoUrl)) {
-      return res.status(400).json({ error: 'Invalid YouTube URL' });
-    }
-
     const info = await ytdl.getInfo(videoUrl);
-    
-    // Get available formats with both video and audio
     const formats = info.formats
-      .filter(format => format.hasVideo && format.hasAudio && format.qualityLabel)
-      .map(format => ({
-        quality: format.qualityLabel,
-        container: format.container,
-        url: `${PROXY_BASE_URL}/youtube/download?url=${encodeUrl(videoUrl)}&quality=${format.qualityLabel}`
+      .filter(f => f.hasVideo && f.hasAudio)
+      .map(f => ({
+        quality: f.qualityLabel,
+        url: `/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=${f.qualityLabel}`
       }));
 
     res.json({
-      success: true,
       title: info.videoDetails.title,
-      duration: info.videoDetails.lengthSeconds,
-      thumbnail: info.videoDetails.thumbnails[info.videoDetails.thumbnails.length - 1].url,
+      thumbnail: info.videoDetails.thumbnails[0].url,
       formats: formats
     });
-
   } catch (err) {
-    console.error('YouTube info error:', err);
-    res.status(500).json({ 
-      error: 'Failed to get YouTube video info',
-      message: err.message 
-    });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// YouTube Download Endpoint
+// YouTube download
 app.get('/youtube/download', async (req, res) => {
-  const encoded = req.query.url;
-  const quality = req.query.quality || 'highest';
-  let videoUrl;
-
   try {
-    if (!encoded) {
-      return res.status(400).json({ error: 'YouTube URL is required' });
-    }
+    const videoUrl = req.query.url;
+    const quality = req.query.quality;
     
-    videoUrl = decodeUrl(encoded);
-    console.log(`📥 YouTube download: ${videoUrl} [${quality}]`);
-    
-    if (!ytdl.validateURL(videoUrl)) {
-      return res.status(400).json({ error: 'Invalid YouTube URL' });
-    }
-
-    const info = await ytdl.getInfo(videoUrl);
-    const title = info.videoDetails.title.replace(/[^a-zA-Z0-9 \-_]/g, '');
-    
-    // Set download headers
-    res.header('Content-Disposition', `attachment; filename="${title}.mp4"`);
-    res.header('Content-Type', 'video/mp4');
-    
-    // Stream the video
-    ytdl(videoUrl, {
-      quality: quality,
-      filter: format => format.container === 'mp4' && format.hasVideo && format.hasAudio
-    }).pipe(res);
-
+    res.header('Content-Disposition', 'attachment');
+    ytdl(videoUrl, { quality: quality }).pipe(res);
   } catch (err) {
-    console.error('YouTube download error:', err);
-    res.status(500).json({ 
-      error: 'Failed to download YouTube video',
-      message: err.message 
-    });
+    res.status(500).send(err.message);
   }
 });
 
