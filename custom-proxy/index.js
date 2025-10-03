@@ -11,7 +11,7 @@ const fetch = (...args) =>
 const app = express();
 const PORT = process.env.PORT || 3000;
 const PROXY_BASE_URL = process.env.PROXY_BASE_URL || 'https://nothingeverhappens.onrender.com';
-
+process.env.YTDL_NO_UPDATE = 'true';
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
