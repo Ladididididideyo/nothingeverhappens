@@ -1,3 +1,6 @@
+const axios = require('axios');
+const cheerio = require('cheerio');
+const ytdl = require('ytdl-core');
 const express = require('express');
 const { JSDOM } = require('jsdom');
 const cors = require('cors');
@@ -572,6 +575,284 @@ app.post('/go', async (req, res) => {
       error: 'Proxy error', 
       message: err.message 
     });
+  }
+});
+
+// YouTube downloader endpoint
+app.get('/youtube/download', async (req, res) => {
+  const videoUrl = req.query.url;
+  const quality = req.query.quality || 'highest';
+  
+  if (!videoUrl) {
+    return res.status(400).json({ error: 'YouTube URL is required' });
+  }
+
+  try {
+    // Validate YouTube URL
+    if (!ytdl.validateURL(videoUrl)) {
+      return res.status(400).json({ error: 'Invalid YouTube URL' });
+    }
+
+    console.log(`📥 YouTube download request: ${videoUrl}`);
+    
+    // Get video info
+    const info = await ytdl.getInfo(videoUrl);
+    const title = info.videoDetails.title.replace(/[^a-zA-Z0-9 ]/g, '_');
+    
+    // Set headers for download
+    res.header('Content-Disposition', `attachment; filename="${title}.mp4"`);
+    res.header('Content-Type', 'video/mp4');
+    
+    // Stream the video
+    ytdl(videoUrl, {
+      quality: quality,
+      filter: format => format.container === 'mp4'
+    }).pipe(res);
+    
+  } catch (err) {
+    console.error('YouTube download error:', err);
+    res.status(500).json({ 
+      error: 'Failed to download YouTube video',
+      message: err.message 
+    });
+  }
+});
+
+// YouTube info endpoint
+app.get('/youtube/info', async (req, res) => {
+  const videoUrl = req.query.url;
+  
+  if (!videoUrl) {
+    return res.status(400).json({ error: 'YouTube URL is required' });
+  }
+
+  try {
+    if (!ytdl.validateURL(videoUrl)) {
+      return res.status(400).json({ error: 'Invalid YouTube URL' });
+    }
+
+    const info = await ytdl.getInfo(videoUrl);
+    
+    res.json({
+      success: true,
+      title: info.videoDetails.title,
+      duration: info.videoDetails.lengthSeconds,
+      thumbnail: info.videoDetails.thumbnails[0].url,
+      formats: info.formats
+        .filter(format => format.hasVideo && format.hasAudio)
+        .map(format => ({
+          quality: format.qualityLabel,
+          container: format.container,
+          url: `${PROXY_BASE_URL}/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=${format.qualityLabel}`
+        }))
+    });
+    
+  } catch (err) {
+    console.error('YouTube info error:', err);
+    res.status(500).json({ 
+      error: 'Failed to get YouTube video info',
+      message: err.message 
+    });
+  }
+});
+
+// YouTube channel videos endpoint
+app.get('/youtube/channel/videos', async (req, res) => {
+  const channelUrl = req.query.url;
+  
+  if (!channelUrl) {
+    return res.status(400).json({ error: 'YouTube channel URL is required' });
+  }
+
+  try {
+    console.log(`📺 Fetching YouTube channel videos: ${channelUrl}`);
+    
+    // Normalize channel URL
+    let fetchUrl = channelUrl;
+    if (channelUrl.includes('@')) {
+      // Handle @username format
+      fetchUrl = `https://www.youtube.com/${channelUrl}/videos`;
+    } else if (channelUrl.includes('/channel/')) {
+      // Handle channel ID format
+      fetchUrl = `${channelUrl}/videos`;
+    } else if (!channelUrl.includes('/videos')) {
+      // Assume it's a channel URL and append /videos
+      fetchUrl = `${channelUrl}/videos`;
+    }
+
+    // Fetch the channel page
+    const response = await axios.get(fetchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+
+    const $ = cheerio.load(response.data);
+    
+    // Extract video data from the page
+    const videos = [];
+    
+    // Method 1: Look for video links in the page
+    $('a[href*="/watch?v="]').each((index, element) => {
+      const href = $(element).attr('href');
+      const title = $(element).attr('title') || $(element).text().trim();
+      
+      if (href && title && !href.includes('&list=') && title.length > 0) {
+        const videoId = href.split('v=')[1]?.split('&')[0];
+        if (videoId && videoId.length === 11) {
+          const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+          
+          // Avoid duplicates
+          if (!videos.find(v => v.id === videoId)) {
+            videos.push({
+              id: videoId,
+              title: title,
+              url: videoUrl,
+              proxyUrl: `${PROXY_BASE_URL}/go?url=${encodeUrl(videoUrl)}`
+            });
+          }
+        }
+      }
+    });
+
+    // Method 2: Look for video data in script tags (more reliable)
+    const scriptContents = $('script').map((i, el) => $(el).html()).get();
+    const ytInitialDataScript = scriptContents.find(script => 
+      script.includes('ytInitialData') && script.includes('videoId')
+    );
+
+    if (ytInitialDataScript) {
+      try {
+        const jsonMatch = ytInitialDataScript.match(/ytInitialData\s*=\s*({.*?});/);
+        if (jsonMatch) {
+          const ytData = JSON.parse(jsonMatch[1]);
+          
+          // Extract videos from the complex YouTube data structure
+          const extractVideosFromData = (data) => {
+            const foundVideos = [];
+            
+            if (data && typeof data === 'object') {
+              // Look for video objects in various possible locations
+              if (data.videoId && data.title) {
+                foundVideos.push({
+                  id: data.videoId,
+                  title: data.title.simpleText || data.title.runs?.[0]?.text || 'Unknown Title',
+                  url: `https://www.youtube.com/watch?v=${data.videoId}`,
+                  proxyUrl: `${PROXY_BASE_URL}/go?url=${encodeUrl(`https://www.youtube.com/watch?v=${data.videoId}`)}`
+                });
+              }
+              
+              // Recursively search through object properties
+              for (const key in data) {
+                if (data[key] && typeof data[key] === 'object') {
+                  foundVideos.push(...extractVideosFromData(data[key]));
+                }
+              }
+            }
+            
+            return foundVideos;
+          };
+          
+          const extractedVideos = extractVideosFromData(ytData);
+          extractedVideos.forEach(video => {
+            if (!videos.find(v => v.id === video.id)) {
+              videos.push(video);
+            }
+          });
+        }
+      } catch (parseError) {
+        console.error('Error parsing YouTube data:', parseError);
+      }
+    }
+
+    // Remove duplicates and limit results
+    const uniqueVideos = [...new Map(videos.map(v => [v.id, v])).values()]
+      .slice(0, 50); // Limit to 50 videos
+
+    if (uniqueVideos.length === 0) {
+      return res.status(404).send(`
+        <html>
+          <head><title>No Videos Found</title></head>
+          <body>
+            <h1>No videos found for this channel</h1>
+            <p>The channel might be private, have no videos, or YouTube's structure has changed.</p>
+          </body>
+        </html>
+      `);
+    }
+
+    // Generate HTML list
+    const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>YouTube Channel Videos</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h1 { color: #ff0000; border-bottom: 2px solid #ff0000; padding-bottom: 10px; }
+            .video-list { list-style: none; padding: 0; }
+            .video-item { padding: 15px; border-bottom: 1px solid #eee; margin-bottom: 10px; }
+            .video-item:hover { background: #f9f9f9; }
+            .video-link { text-decoration: none; color: #0066cc; font-size: 16px; font-weight: bold; }
+            .video-link:hover { color: #ff0000; text-decoration: underline; }
+            .video-id { color: #666; font-size: 12px; margin-top: 5px; }
+            .count { background: #ff0000; color: white; padding: 2px 8px; border-radius: 12px; font-size: 14px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>YouTube Channel Videos <span class="count">${uniqueVideos.length}</span></h1>
+            <ul class="video-list">
+                ${uniqueVideos.map(video => `
+                    <li class="video-item">
+                        <a href="${video.proxyUrl}" class="video-link" target="_blank">
+                            ${video.title}
+                        </a>
+                        <div class="video-id">Video ID: ${video.id}</div>
+                    </li>
+                `).join('')}
+            </ul>
+        </div>
+    </body>
+    </html>
+    `;
+
+    res.set('Content-Type', 'text/html');
+    res.send(html);
+
+  } catch (err) {
+    console.error('YouTube channel videos error:', err);
+    
+    const errorHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Error</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .error { color: #d32f2f; background: #ffebee; padding: 15px; border-radius: 4px; border-left: 4px solid #d32f2f; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Error Fetching Channel Videos</h1>
+            <div class="error">
+                <strong>Error:</strong> ${err.message}<br>
+                <strong>Possible reasons:</strong>
+                <ul>
+                    <li>Channel is private or doesn't exist</li>
+                    <li>YouTube changed their page structure</li>
+                    <li>Network connection issue</li>
+                </ul>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+    
+    res.status(500).send(errorHtml);
   }
 });
 
